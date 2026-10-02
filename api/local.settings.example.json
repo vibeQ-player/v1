@@ -1,0 +1,17 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "STORAGE_DRIVER": "sqlite",
+    "APP_ORIGIN": "http://127.0.0.1:5173",
+    "SPOTIFY_REDIRECT_URI": "http://127.0.0.1:5173/api/spotify/callback",
+    "SPOTIFY_CLIENT_ID": "",
+    "SPOTIFY_CLIENT_SECRET": "",
+    "HOST_PASSWORD": "",
+    "SESSION_SECRET": "",
+    "ENABLE_ARCHIVES": "true",
+    "ENABLE_ARTWORK": "false",
+    "ENABLE_TRIVIA": "false"
+  }
+}

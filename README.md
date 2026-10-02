@@ -275,4 +275,3 @@ Other hosts can wrap the shared Request/Response handler and schedule its worker
 ## License
 
 MIT; see [LICENSE](LICENSE). The weighted fair-queue algorithm is adapted from the original vibeQ by groovepop, with attribution retained. Spotify content belongs to its rights holders; this project is not affiliated with Spotify.
-"# v1" 

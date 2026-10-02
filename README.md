@@ -4,6 +4,8 @@ Search Spotify, request songs, vote for favourites, and let a fair queue give ev
 
 **Run locally with Node.js and SQLite: no Azure account, Azure Functions, Docker, or AI credentials required.** The same application services also run on Azure for a hosted demo. YouTube, bookings, and multiple Spotify account slots are outside this project’s scope.
 
+**[Live demo](https://victorious-beach-0ed25f60f.1.azurestaticapps.net)** · [Public repository](https://github.com/vibeQ-player/v1). The demo uses the host’s Spotify connection; playback requires an active Spotify device. Archives are enabled, while AI artwork and trivia need optional provider configuration.
+
 ## Features
 
 - Spotify search, anonymous requests, voting, and weighted fair queueing.

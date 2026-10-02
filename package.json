@@ -1,0 +1,18 @@
+{
+  "name": "vibeq-player",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.13.0" },
+  "scripts": {
+    "dev": "concurrently -k -n api,web \"npm run server\" \"vite --host 127.0.0.1\"",
+    "server": "node --env-file-if-exists=.env server/local.js",
+    "build": "vite build",
+    "start": "node --env-file-if-exists=.env server/local.js",
+    "test": "node --test test/*.test.js",
+    "check": "node scripts/check.js && npm test && npm run build",
+    "functions:prepare": "node scripts/package-functions.js"
+  },
+  "dependencies": { "react": "^19.2.0", "react-dom": "^19.2.0" },
+  "devDependencies": { "@vitejs/plugin-react": "^5.0.0", "concurrently": "^9.2.0", "vite": "^7.1.0" }
+}

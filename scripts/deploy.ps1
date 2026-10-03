@@ -106,7 +106,8 @@ try {
   & npx --yes '@azure/static-web-apps-cli@2.0.10' deploy ./dist --env production --app-name $taskWeb --resource-group $ResourceGroup
   if ($LASTEXITCODE -ne 0) { throw 'Static Web Apps deployment failed.' }
 } finally { Remove-Item Env:SWA_CLI_DEPLOYMENT_TOKEN; Remove-Item Env:VITE_API_BASE_URL }
-@{ resourceGroup=$ResourceGroup; namePrefix=$NamePrefix; location=$Location; url=$taskOrigin; api="https://$taskApiHostname"; spotifyCallback=$taskCallback } | ConvertTo-Json | Set-Content -LiteralPath '.deploy/demo.json' -Encoding utf8
-Write-Host "Demo URL: $taskOrigin"
+@{ resourceGroup=$ResourceGroup; namePrefix=$NamePrefix; location=$Location; url=$taskOrigin; playerUrl="$taskOrigin/player/"; api="https://$taskApiHostname"; spotifyCallback=$taskCallback } | ConvertTo-Json | Set-Content -LiteralPath '.deploy/demo.json' -Encoding utf8
+Write-Host "Project website: $taskOrigin"
+Write-Host "Demo URL: $taskOrigin/player/"
 Write-Host "Register this exact Spotify redirect URI: $taskCallback"
 Write-Host 'Host password is stored only in your ignored .env file and Azure application settings.'

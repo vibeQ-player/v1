@@ -4,7 +4,7 @@ Search Spotify, request songs, vote for favourites, and let a fair queue give ev
 
 **Run locally with Node.js and SQLite: no Azure account, Azure Functions, Docker, or AI credentials required.** The same application services also run on Azure for a hosted demo. YouTube, bookings, and multiple Spotify account slots are outside this project’s scope.
 
-**[Live demo](https://victorious-beach-0ed25f60f.1.azurestaticapps.net)** · [Public repository](https://github.com/vibeQ-player/v1). The demo uses the host’s Spotify connection; playback requires an active Spotify device. Archives are enabled, while AI artwork and trivia need optional provider configuration.
+**[Project website](https://vibeq.groovepop.ca/)** · **[Live demo](https://vibeq.groovepop.ca/player/)** · [Public repository](https://github.com/vibeQ-player/v1). The demo uses the host’s Spotify connection; playback requires an active Spotify device. Archives are enabled, while AI artwork and trivia need optional provider configuration.
 
 ## Features
 
@@ -69,7 +69,7 @@ Spotify requires explicit loopback IPs for HTTP redirects: `localhost` is not pe
 npm run dev
 ```
 
-Open **http://127.0.0.1:5173**. Unlock **Host controls** using your password, then **Connect Spotify**. Approve access. Open Spotify on the host playback device and start a song. Use **Find devices** and **Transfer** if needed. Guests can search, request, and vote.
+Open **http://127.0.0.1:5173/player/** (the root URL is the project homepage). Unlock **Host controls** using your password, then **Connect Spotify**. Approve access. Open Spotify on the host playback device and start a song. Use **Find devices** and **Transfer** if needed. Guests can search, request, and vote.
 
 Vite proxies `/api` to the local Node server on port 3001. No Functions Core Tools are required. Run one local API instance per database. Queue advancement runs every 15 seconds; the visible UI normally polls every 10 seconds.
 
@@ -87,7 +87,7 @@ npm run build
 npm start
 ```
 
-Open **http://127.0.0.1:3001**. Restore both settings to port 5173 for Vite development. Keep `PORT=3001` unless you also edit the Vite proxy. The local server binds to loopback; LAN/public hosting requires an HTTPS reverse proxy and matching origin settings.
+Open **http://127.0.0.1:3001/player/**. Restore both settings to port 5173 for Vite development. Keep `PORT=3001` unless you also edit the Vite proxy. The local server binds to loopback; LAN/public hosting requires an HTTPS reverse proxy and matching origin settings.
 
 ## Optional add-ons
 
@@ -184,6 +184,21 @@ az functionapp function list --name YOUR_PREFIX-api --resource-group rg-vibeq-de
 
 Inspect worker errors in the Function app’s Application Insights logs. Do not log passwords, tokens, or full configuration. `/health` verifies HTTP availability, not end-to-end playback.
 
+### Custom domain and project homepage
+
+The root URL serves a static HTML project homepage; `/player/` serves the React player. Both are built and hosted together. The homepage contains feature explanations, local setup guidance, and FAQs without requiring JavaScript to read them. `public/robots.txt` and `public/sitemap.xml` expose the public URLs. Unknown paths return a real 404 rather than the homepage.
+
+For an Azure DNS-hosted subdomain, first check that no existing record is in use, then create a CNAME to the Static Web App hostname and validate the domain:
+
+```powershell
+az network dns record-set cname set-record --resource-group YOUR_DNS_GROUP --zone-name YOUR_DOMAIN --record-set-name vibeq --cname YOUR_STATIC_WEB_APP_HOSTNAME
+az staticwebapp hostname set --name YOUR_PREFIX-web --resource-group rg-vibeq-demo --hostname vibeq.YOUR_DOMAIN --validation-method cname-delegation
+```
+
+After Azure validates the domain and provisions HTTPS, add `PUBLIC_SITE_ORIGIN=https://vibeq.YOUR_DOMAIN` to your ignored `.env` and redeploy with `-UpdateOnly`. This sets the cloud API origin/CORS to the custom domain and preserves it on future deployments. Keep local `APP_ORIGIN` and Spotify loopback settings unchanged. The hosted Spotify callback still uses the Function app URL; successful authorization returns through the homepage to `/player/`.
+
+The branded homepage defaults to `https://vibeq.groovepop.ca`. Forks using another domain should update canonical/Open Graph URLs in `index.html` and `player/index.html`, plus `public/robots.txt` and `public/sitemap.xml`. Verify the site in Google Search Console and submit its sitemap to monitor indexing; hosting a page does not guarantee its inclusion in search.
+
 ### Updates and cleanup
 
 ```powershell
@@ -216,6 +231,7 @@ SWA uses its Free plan. Functions/timers, Cosmos operations, Storage, and Applic
 | `HOST_PASSWORD`, `SESSION_SECRET` | Host login and signed eight-hour bearer sessions |
 | `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET` | Server-side OAuth credentials |
 | `APP_ORIGIN` | Exact frontend origin, no trailing slash |
+| `PUBLIC_SITE_ORIGIN` | Optional validated HTTPS custom origin used by Azure deployment; ignored by local runtime |
 | `SPOTIFY_REDIRECT_URI` | Callback ending in `/api/spotify/callback` |
 | `PORT`, `DATA_DIR` | Local API port and SQLite/artwork directory |
 | `STORAGE_DRIVER` | `sqlite` locally; `cosmos` in Azure |

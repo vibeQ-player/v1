@@ -6,7 +6,7 @@ import { createStore } from './store.js';
 import { createApp } from './app.js';
 
 const cfg = config(), store = await createStore(cfg), app = createApp(cfg, store);
-const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
+const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.xml': 'application/xml', '.txt': 'text/plain' };
 const dist = path.resolve('dist');
 const server = http.createServer(async (req, res) => {
   try {
@@ -23,13 +23,14 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(response.status, Object.fromEntries(response.headers));
       res.end(Buffer.from(await response.arrayBuffer())); return;
     }
-    const file = path.resolve(dist, `.${decodeURIComponent(url.pathname)}`);
+    if (url.pathname === '/player') { res.writeHead(301, { Location: `/player/${url.search}` }); res.end(); return; }
+    const file = path.resolve(dist, `.${decodeURIComponent(url.pathname.endsWith('/') ? url.pathname + 'index.html' : url.pathname)}`);
     if (file !== dist && !file.startsWith(dist + path.sep)) { res.writeHead(403); res.end(); return; }
     let content, extension = path.extname(file);
     try { content = await readFile(file); }
     catch {
-      if (extension && extension !== '.html') { res.writeHead(404); res.end(); return; }
-      content = await readFile(path.join(dist, 'index.html')); extension = '.html';
+      res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(await readFile(path.join(dist, '404.html'))); return;
     }
     res.writeHead(200, { 'Content-Type': mime[extension] || 'application/octet-stream', 'X-Content-Type-Options': 'nosniff' }); res.end(content);
   } catch { res.writeHead(500); res.end('Build the frontend with npm run build, or use npm run dev.'); }

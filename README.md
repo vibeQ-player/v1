@@ -8,7 +8,7 @@ Search Spotify, request songs, vote for favourites, and let a fair queue give ev
 
 ## Features
 
-- Spotify search, anonymous requests, voting, and weighted fair queueing.
+- Live Spotify search with a dropdown, keyboard navigation, anonymous requests, voting, and weighted fair queueing.
 - Host sign-in, Spotify authorization, play/pause/skip, devices, and volume.
 - Independent background queue advancement while guest tabs are closed.
 - Optional archives: save completed requests, export Spotify URIs, and replay sessions.

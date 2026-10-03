@@ -1,14 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
+import SearchBox from './SearchBox.jsx';
 
 const API = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 const imageUrl = value => value?.startsWith('/api/') ? `${API}${value}` : value;
 let guestId = localStorage.getItem('vibeq-guest');
 if (!guestId) { guestId = crypto.randomUUID(); localStorage.setItem('vibeq-guest', guestId); }
-async function api(path, data) {
+async function api(path, data, options = {}) {
   const token = sessionStorage.getItem('vibeq-host');
-  const response = await fetch(`${API}/api${path}`, { method: data === undefined ? 'GET' : 'POST', headers: { ...(data === undefined ? {} : { 'Content-Type': 'application/json' }), ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: data === undefined ? undefined : JSON.stringify(data) });
+  const response = await fetch(`${API}/api${path}`, { method: data === undefined ? 'GET' : 'POST', headers: { ...(data === undefined ? {} : { 'Content-Type': 'application/json' }), ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: data === undefined ? undefined : JSON.stringify(data), signal: options.signal });
   const result = await response.json();
   if (!response.ok) {
     const error = new Error(result.error || 'Request failed.');
@@ -28,7 +29,7 @@ function TrackRow({ item, index, action, actionLabel, remove }) {
 }
 function App() {
   const [settings, setSettings] = useState(null), [state, setState] = useState(initial);
-  const [tab, setTab] = useState('queue'), [query, setQuery] = useState(''), [results, setResults] = useState([]), [searching, setSearching] = useState(false);
+  const [tab, setTab] = useState('queue'), [results, setResults] = useState([]);
   const [message, setMessage] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const [hostPanel, setHostPanel] = useState(false), [host, setHost] = useState(Boolean(sessionStorage.getItem('vibeq-host'))), [password, setPassword] = useState('');
   const [devices, setDevices] = useState([]), [device, setDevice] = useState(''), [volume, setVolume] = useState(50);
@@ -57,11 +58,13 @@ function App() {
     catch (e) { setError(e.message); }
     finally { setBusy(false); }
   }
-  async function search(e) {
-    e.preventDefault(); setSearching(true); setError('');
-    try { setResults((await api(`/search?q=${encodeURIComponent(query)}`)).tracks); setTab('search'); }
-    catch (e) { setError(e.message); }
-    finally { setSearching(false); }
+  async function addTrack(item) {
+    return run(async () => {
+      const result = await api('/requests', { trackUri: item.trackUri, guestId });
+      const next = [...votes, result.request.id];
+      setVotes(next); localStorage.setItem('vibeq-votes', JSON.stringify(next));
+      return result;
+    }, 'Added to the mix.');
   }
   async function vote(item) {
     const remove = votes.includes(item.id);
@@ -107,9 +110,9 @@ function App() {
     {settings?.features.artwork && state.customArt && <section className="panel addon-card"><p className="eyebrow">ANOTHER WAY TO SEE THE SONG</p><Cover src={state.customArt} name="AI interpretation" className="generated-cover" /><p className="muted">Original AI artwork · inspired by the track</p></section>}
     {settings?.features.trivia && state.trivia.length > 0 && <section className="panel trivia"><p className="eyebrow">BEHIND THE MUSIC</p>{state.trivia.map((item,i) => <div key={i}><p>{item.text}</p><div className="sources">{item.sources.map((source,j) => <a key={j} href={source.url} target="_blank" rel="noreferrer">{source.title} ↗</a>)}</div></div>)}<span className="muted">AI-researched · sources linked</span></section>}
     <section className="fair-note"><span>↗</span><div><h3>A little democracy.<br />A lot of good music.</h3><p>Votes lift your favourites. Fair queueing gives everyone a turn. Tracks already sent to Spotify keep their order.</p></div></section></aside>
-    <section className="queue-area"><form className="search" onSubmit={search}><label className="sr-only" htmlFor="search">Search Spotify tracks or artists</label><span aria-hidden="true">⌕</span><input id="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search a song or artist…" minLength={2} required /><button disabled={searching || !state.connected}>{searching ? 'Searching…' : 'Find a track ↗'}</button></form><nav className="tabs" aria-label="Player views">{[['queue', 'The queue'], ['search', 'Discover'], ['played', 'Played'], ...(settings?.features.archives ? [['archives', 'Saved sessions']] : [])].map(([value,label]) => <button key={value} aria-current={tab === value ? 'page' : undefined} className={tab === value ? 'active' : ''} onClick={() => { setTab(value); if (value === 'archives') run(loadArchives); }}>{label}{value === 'queue' && <span>{state.pending.length}</span>}</button>)}</nav>
+    <section className="queue-area"><SearchBox connected={state.connected} searchTracks={(query, signal) => api(`/search?q=${encodeURIComponent(query)}`, undefined, { signal })} onResults={tracks => { setResults(tracks); setTab('search'); }} onAdd={addTrack} busy={busy} queuedUris={[...state.pending, ...state.queued].map(item => item.trackUri)} /><nav className="tabs" aria-label="Player views">{[['queue', 'The queue'], ['search', 'Discover'], ['played', 'Played'], ...(settings?.features.archives ? [['archives', 'Saved sessions']] : [])].map(([value,label]) => <button key={value} aria-current={tab === value ? 'page' : undefined} className={tab === value ? 'active' : ''} onClick={() => { setTab(value); if (value === 'archives') run(loadArchives); }}>{label}{value === 'queue' && <span>{state.pending.length}</span>}</button>)}</nav>
     {tab === 'queue' && <><div className="section-heading queue-title"><h2>Up next</h2><span className="muted">Chosen by the room</span></div>{state.queued.length > 0 && <div className="buffer"><p className="eyebrow">LOCKED IN · SENT TO SPOTIFY</p>{state.queued.map((item,i) => <TrackRow key={item.id} item={item} index={i} />)}</div>}<div className="pending">{state.pending.map((item,i) => <div key={item.id} className={i === 0 ? 'next-track' : ''}><TrackRow item={item} index={i} action={vote} actionLabel={`${votes.includes(item.id) ? '✓' : '↑'} ${item.votes}`} remove={host ? item => run(() => api('/requests/delete', { id: item.id })) : undefined} /></div>)}</div>{!state.pending.length && <div className="empty"><span>＋</span><h3>Make the first move.</h3><p>Search for a track and give this room its next favourite.</p></div>}</>}
-    {tab === 'search' && <><div className="section-heading queue-title"><h2>Find your sound</h2><span className="muted">Spotify search</span></div>{results.map((item,i) => <TrackRow key={item.id} item={item} index={i} action={item => run(async () => { const result = await api('/requests', { trackUri: item.trackUri, guestId }); const next = [...votes, result.request.id]; setVotes(next); localStorage.setItem('vibeq-votes', JSON.stringify(next)); }, 'Added to the mix.')} actionLabel="＋ Add" />)}{!results.length && <div className="empty"><h3>A song for this moment.</h3><p>Search above to explore Spotify.</p></div>}</>}
+    {tab === 'search' && <><div className="section-heading queue-title"><h2>Find your sound</h2><span className="muted">Spotify search</span></div>{results.map((item,i) => <TrackRow key={item.id} item={item} index={i} action={addTrack} actionLabel="＋ Add" />)}{!results.length && <div className="empty"><h3>A song for this moment.</h3><p>Search above to explore Spotify.</p></div>}</>}
     {tab === 'played' && <><div className="section-heading queue-title"><h2>The soundtrack so far</h2><span className="muted">This session</span></div>{state.played.map((item,i) => <TrackRow key={item.id} item={item} index={i} />)}{!state.played.length && <div className="empty"><h3>Good memories start here.</h3><p>Requested tracks appear as playback is observed.</p></div>}{host && settings?.features.archives && <form className="inline-form archive-form" onSubmit={e => { e.preventDefault(); run(() => api('/archives', { name: setName }), 'Session saved.'); }}><label className="sr-only" htmlFor="setName">Session name</label><input id="setName" value={setName} onChange={e => setSetName(e.target.value)} placeholder="Give this session a name" maxLength={100} /><button disabled={busy}>Save completed tracks</button></form>}</>}
     {tab === 'archives' && <><div className="section-heading queue-title"><h2>Worth another listen.</h2><span className="muted">Saved sessions</span></div>{archives.map(item => <button className="archive-row" key={item.id} onClick={() => run(async () => setArchive((await api(`/archives?id=${encodeURIComponent(item.id)}`)).archive))}><span><strong>{item.name}</strong><small>{new Date(item.savedAt).toLocaleDateString()}</small></span><span>{item.trackCount} tracks ↗</span></button>)}{!archives.length && <div className="empty"><h3>Keep the good nights.</h3><p>The host can save completed tracks from the Played view.</p></div>}{archive && <section className="archive-detail"><div className="section-heading"><h3>{archive.name}</h3><button className="quiet" onClick={() => setArchive(null)}>Close</button></div><div className="controls"><button className="secondary" onClick={() => run(() => navigator.clipboard.writeText(archive.tracks.map(t => t.trackUri).join('\n')), 'Spotify URIs copied.')}>Copy Spotify URIs</button>{host && <button disabled={busy} onClick={() => run(() => api('/archives/replay', { id: archive.id }), result => `${result.added} tracks returned to the fair queue.`)}>Replay session</button>}</div>{archive.tracks.map((item,i) => <TrackRow key={item.id} item={item} index={i} />)}</section>}</>}
     </section></div></main><footer><span className="brand">vibe<span>Q</span></span><span>Good music. Shared.</span><a href="https://developer.spotify.com/" target="_blank" rel="noreferrer">Powered by Spotify</a></footer></div>;

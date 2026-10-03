@@ -18,6 +18,8 @@ Search Spotify, request songs, vote for favourites, and let a fair queue give ev
 
 Normally music plays on a Spotify Connect device, such as Spotify’s desktop app. The browser controls that device; it does not download music. Browser audio is an explicit optional setting.
 
+Host controls connect the room’s Spotify account, select a playback device, control playback/volume, remove pending requests, and save/replay sessions. The green **Spotify linked** indicator means the host account is connected to the room; see **Now playing** for playback and device status. Search results appear in a dropdown while typing, with no separate Discover tab.
+
 ## Requirements
 
 - Node.js **22.13+** (22 or 24) and npm.

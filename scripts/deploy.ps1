@@ -48,6 +48,11 @@ if (-not $UpdateOnly) {
 $taskHostname = (Invoke-Azure @('staticwebapp','show','--name',$taskWeb,'--resource-group',$ResourceGroup,'--query','defaultHostname','-o','tsv')).Trim()
 $taskApiHostname = (Invoke-Azure @('functionapp','show','--name',$taskFunction,'--resource-group',$ResourceGroup,'--query','properties.defaultHostName || defaultHostName','-o','tsv')).Trim()
 $taskOrigin = "https://$taskHostname"
+if ($taskEnv['PUBLIC_SITE_ORIGIN']) {
+  $taskCustomOrigin = [uri]$taskEnv['PUBLIC_SITE_ORIGIN']
+  if ($taskCustomOrigin.Scheme -ne 'https' -or $taskCustomOrigin.GetLeftPart([System.UriPartial]::Authority) -ne $taskEnv['PUBLIC_SITE_ORIGIN']) { throw 'PUBLIC_SITE_ORIGIN must be an HTTPS origin without a path or trailing slash.' }
+  $taskOrigin = $taskEnv['PUBLIC_SITE_ORIGIN']
+}
 $taskCallback = "https://$taskApiHostname/api/spotify/callback"
 $taskCosmosEndpoint = (Invoke-Azure @('cosmosdb','show','--name',$taskCosmos,'--resource-group',$ResourceGroup,'--query','documentEndpoint','-o','tsv')).Trim()
 $taskCosmosKey = (Invoke-Azure @('cosmosdb','keys','list','--name',$taskCosmos,'--resource-group',$ResourceGroup,'--query','primaryMasterKey','-o','tsv')).Trim()

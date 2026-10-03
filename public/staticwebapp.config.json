@@ -1,4 +1,5 @@
 {
-  "navigationFallback": { "rewrite": "/index.html", "exclude": ["/assets/*", "/api/*"] },
+  "routes": [{ "route": "/player", "redirect": "/player/", "statusCode": 301 }],
+  "responseOverrides": { "404": { "rewrite": "/404.html" } },
   "globalHeaders": { "X-Content-Type-Options": "nosniff", "Referrer-Policy": "strict-origin-when-cross-origin" }
 }

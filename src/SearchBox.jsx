@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 
 const length = ms => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
 
-export default function SearchBox({ connected, searchTracks, onResults, onAdd, busy, queuedUris }) {
+export default function SearchBox({ connected, searchTracks, onAdd, busy, queuedUris }) {
   const [query, setQuery] = useState(''), [tracks, setTracks] = useState([]);
   const [open, setOpen] = useState(false), [loading, setLoading] = useState(false);
   const [error, setError] = useState(''), [active, setActive] = useState(-1);
@@ -48,9 +48,6 @@ export default function SearchBox({ connected, searchTracks, onResults, onAdd, b
     if (busy || queuedUris.includes(item.trackUri)) return;
     if (await onAdd(item)) { setOpen(false); setActive(-1); input.current?.focus(); setOpen(false); }
   }
-  function showResults() {
-    if (!loading && tracks.length) { onResults(tracks); setOpen(false); setActive(-1); }
-  }
   function keyboard(e) {
     if (e.key === 'Escape') { setOpen(false); setActive(-1); return; }
     if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && tracks.length) {
@@ -59,14 +56,15 @@ export default function SearchBox({ connected, searchTracks, onResults, onAdd, b
     }
     if (e.key === 'Enter') {
       e.preventDefault();
-      if (expanded && active >= 0 && tracks[active]) add(tracks[active]); else showResults();
+      if (expanded && active >= 0 && tracks[active]) add(tracks[active]);
+      else { setOpen(true); if (!loading && tracks.length) setActive(0); }
     }
   }
 
   return <div className="search-shell" onBlur={e => {
     if (!e.currentTarget.contains(e.relatedTarget)) { setOpen(false); setActive(-1); }
   }}>
-    <form className={`search ${expanded ? 'search-expanded' : ''}`} onSubmit={e => { e.preventDefault(); showResults(); }}>
+    <form className={`search ${expanded ? 'search-expanded' : ''}`} role="search" onSubmit={e => e.preventDefault()}>
       <label className="sr-only" htmlFor="search">Search Spotify tracks or artists</label>
       <span aria-hidden="true">⌕</span>
       <input ref={input} id="search" role="combobox" aria-autocomplete="list" aria-expanded={expanded}
@@ -75,7 +73,6 @@ export default function SearchBox({ connected, searchTracks, onResults, onAdd, b
         onChange={e => { setQuery(e.target.value); setTracks([]); setActive(-1); setOpen(true); }}
         onFocus={() => setOpen(true)} onClick={() => setOpen(true)} onKeyDown={keyboard} placeholder="Search a song or artist…" />
       {query && <button type="button" className="search-clear" aria-label="Clear search" onClick={() => { setQuery(''); setTracks([]); setOpen(false); input.current?.focus(); }}>×</button>}
-      <button disabled={loading || !connected || !tracks.length}>View results ↗</button>
     </form>
     <span id="search-help" className="sr-only">Type at least two characters. Use arrow keys to select a track and Enter to add it. Escape closes results.</span>
     {expanded && <div className="search-dropdown">

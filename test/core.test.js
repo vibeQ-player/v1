@@ -56,6 +56,23 @@ test('fair queue gives different guests a turn and includes recent archive debt'
   assert.deepEqual(fairSortPending(all).sorted.map(r => r.id), ['b1', 'a2']);
   all[1].votes = 20; assert.ok(fairSortPending(all).scoreOf.a2 < 2);
 });
+test('FPQS combines the two-hour history, Spotify buffer, and vote-ranked pending line', () => {
+  const now = Date.parse('2026-10-04T12:00:00Z');
+  const all = [
+    request('expired', 'played', { guestId: 'a', playedAt: '2026-10-04T09:59:59Z' }),
+    request('recent', 'played', { guestId: 'a', votes: 1, playedAt: '2026-10-04T10:00:00Z' }),
+    request('buffer', 'queued', { guestId: 'a', votes: 3 }),
+    request('older', 'pending', { guestId: 'a', createdAt: '2026-10-04T11:00:00Z', durationMs: 60000 }),
+    request('popular', 'pending', { guestId: 'a', votes: 3, createdAt: '2026-10-04T11:30:00Z', durationMs: 600000 }),
+    request('new-guest', 'pending', { guestId: 'b', createdAt: '2026-10-04T11:45:00Z' })
+  ];
+  const result = fairSortPending(all, now);
+  assert.equal(result.scoreOf.popular, 1); // 0.5 history + 0.25 buffer + 0.25 song
+  assert.equal(result.scoreOf.older, 2);
+  assert.equal(result.scoreOf['new-guest'], 1);
+  assert.deepEqual(result.sorted.map(r => r.id), ['popular', 'new-guest', 'older']);
+});
+
 test('public configuration and state never expose host secrets or Spotify tokens', async t => {
   const { cfg, store } = await fixture(t);
   await store.put('system', { id: 'spotify', accessToken: 'TOPSECRET', refreshToken: 'REFRESH' });

@@ -1,5 +1,6 @@
-// api/lib/fair-queue.js
-// Weighted-fair-queueing score — the party version of F = max(V, F_prev) + L/w.
+// FPQS (Fair Play Queue System), adapted from weighted fair queueing.
+// Exact recurrence: F_i^0 = H_i; F_i^k = F_i^(k-1) + 1/(votes_i^k + 1).
+// H_i sums recent-play and buffered-song costs. No virtual clock is used.
 //
 // Every request costs L/w, with L = 1 (songs are one unit) and w = votes + 1,
 // so voted-up songs are "lighter" and finish sooner. A guest's score

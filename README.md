@@ -2,7 +2,7 @@
 
 Search Spotify, request songs, vote for favourites, and let a fair queue give everyone a turn. Hosts connect one Spotify account and manage playback. Optional session archives, original AI artwork, and sourced trivia enhance the experience.
 
-**Run locally with Node.js and SQLite: no Azure account, Azure Functions, Docker, or AI credentials required.** The same application services also run on Azure for a hosted demo. YouTube, bookings, and multiple Spotify account slots are outside this project’s scope.
+**Run locally with Node.js and SQLite: no Azure account, Azure Functions, Docker, or AI credentials required.** The shared Node.js application can be adapted for AWS, Google Cloud, Azure, or another host with persistent storage and background workers. This repository includes an Azure deployment path for the hosted demo; other providers require their own deployment configuration. YouTube, bookings, and multiple Spotify account slots are outside this project’s scope.
 
 **[Project website](https://vibeq.groovepop.ca/)** · **[Live demo](https://vibeq.groovepop.ca/player/)** · [Public repository](https://github.com/vibeQ-player/v1). The demo uses the host’s Spotify connection; playback requires an active Spotify device. Archives are enabled, while AI artwork and trivia need optional provider configuration.
 
@@ -242,7 +242,20 @@ SWA uses its Free plan. Functions/timers, Cosmos operations, Storage, and Applic
 
 Host bearer sessions live in browser session storage. Changing `SESSION_SECRET` invalidates sessions; changing the password alone does not. Spotify refresh tokens stay in the backend database. Keep local `data/` private and back it up. Cloud access currently uses keys protected by Azure access controls; managed identity can be added through a storage adapter later.
 
-Fair scoring uses `cost = 1 / (votes + 1)` accumulated per guest across pending/buffered songs and observed plays in the last two hours. Lower scores play first. Votes reorder pending requests, not the three tracks already sent to Spotify. Recent archived plays still contribute.
+### FPQS (Fair Play Queue System)
+
+The implemented FPQS adapts the original weighted fair queueing equation to song requests. Its exact recurrence is:
+
+```text
+F_i^0 = H_i
+F_i^k = F_i^(k-1) + 1 / (v_i^k + 1)
+```
+
+Here `i` is a guest, `k` is a position in that guest’s pending line (most votes first, then creation time and request ID), and `v_i^k` is that song’s vote count. `H_i` sums `1 / (votes + 1)` for that guest’s Spotify-buffered requests and observed plays from the last two hours, including a current requested song within that window. Archived recent plays still count. Scores are recomputed from the current records, rather than saved as permanent finish times.
+
+Lowest score goes next; ties favour more votes, then earlier creation time, then request ID. With no votes, a guest with one recent play has a next-request score of 2; a guest with no recent plays starts at 1. Three votes reduce a song’s cost to 0.25.
+
+The original formula `F_i^k = max(V(a_i^k), F_i^(k-1)) + L_i^k / w_i` describes a more general weighted fair queue. The current code has **no virtual-clock/arrival-time term**: `L = 1` per song regardless of duration, and the effective weight is **per song**, `votes + 1`, rather than fixed per guest. Use the recurrence above when describing this implementation. FPQS balances request costs, not equal listening minutes or guaranteed turns. Votes reorder pending requests, not the three tracks already sent to Spotify. The implementation is in `server/fair-queue.cjs`, with current playback mapped into recent history by `server/queue.js`.
 
 Queue/vote updates use compare-and-swap writes and worker leases. Ambiguous Spotify POST timeouts are recorded rather than blindly retried, preventing duplicate submission. Missing buffered tracks are reconciled after three minutes while playback is active; skipped/unobserved tracks are excluded from archives.
 

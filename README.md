@@ -4,7 +4,7 @@ Search Spotify, request songs, vote for favourites, and let a fair queue give ev
 
 **Run locally with Node.js and SQLite: no Azure account, Azure Functions, Docker, or AI credentials required.** The shared Node.js application can be adapted for AWS, Google Cloud, Azure, or another host with persistent storage and background workers. This repository includes an Azure deployment path for the hosted demo; other providers require their own deployment configuration. YouTube, bookings, and multiple Spotify account slots are outside this project’s scope.
 
-**[Project website](https://vibeq.groovepop.ca/)** · **[Live demo](https://vibeq.groovepop.ca/player/)** · [Public repository](https://github.com/vibeQ-player/v1). The demo uses the host’s Spotify connection; playback requires an active Spotify device. Archives, AI artwork, and sourced trivia are enabled, with a limit of 20 processed tracks per UTC day. Cached content is reused.
+**[Project website](https://vibeq.groovepop.ca/)** · **[Live demo](https://vibeq.groovepop.ca/player/)** · [Public repository](https://github.com/vibeQ-player/v1). The demo uses the host’s Spotify connection; playback requires an active Spotify device. Archives, AI artwork, and sourced trivia are enabled, with no daily generation allowance. Cached content is reused and remains available when Spotify is idle.
 
 ## Features
 
@@ -12,7 +12,7 @@ Search Spotify, request songs, vote for favourites, and let a fair queue give ev
 - Host sign-in, Spotify authorization, play/pause/skip, devices, and volume.
 - Independent background queue advancement while guest tabs are closed.
 - Optional archives: save completed requests, export Spotify URIs, and replay sessions.
-- Optional artwork: original AI interpretations, displayed separately from Spotify album art.
+- Optional artwork: circular, branded song artwork used in place of Spotify album covers when ready.
 - Optional trivia: web-researched prose with clickable source citations.
 - Optional Spotify Web Playback SDK audio in the host’s browser.
 
@@ -131,17 +131,44 @@ AI_IMAGE_MODEL=your-image-deployment-name
 AI_TRIVIA_MODEL=your-web-search-capable-deployment-name
 ```
 
-Artwork uses `POST /images/generations`, requiring base64 PNG output, `size=1024x1024`, and `quality=low`. Trivia uses `POST /responses` with the `web_search` tool. **Not every compatible provider or Azure model deployment supports these endpoints/features.** Configure models explicitly and verify provider support. Models are not provisioned by this repository’s deployment script.
+Artwork uses `POST /images/edits` with multipart form data and the bundled `server/assets/vibeq-seed-logo.png`. A compatible provider must accept image input and return base64 PNG output. Trivia uses two `POST /responses` calls: web research, then structured formatting with no search tool. **Not every provider or model supports these features.** Models are not provisioned by the deployment script.
 
-The demo has been tested with Azure deployments backed by **`gpt-image-2.5-flare`** for artwork and **`gpt-4o`** for trivia, using the Azure v1 endpoint above. `AI_IMAGE_MODEL` and `AI_TRIVIA_MODEL` contain your **deployment names**, which can differ from model IDs (the demo's trivia deployment is named `gpt-4o-facts`). Verify Responses web search is permitted for your subscription and actual output includes URL citation annotations. See [Microsoft image generation documentation](https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/dall-e) and [Responses web search documentation](https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/web-search).
+### Hosted demo AI configuration
 
-Start a small demo with `ADDON_DAILY_LIMIT=2`. The worker checks once per minute and processes only the current track while Spotify is playing. Pending requests do not consume the daily allowance. The main artwork/trivia panels display content for the current track when cached content exists; queuing a song does not immediately display its trivia. Allow for generation time and UI polling. For cloud artwork, deploy with `ENABLE_ARTWORK=true` so the script creates the private Blob container and supplies its connection string.
+The live demo reuses existing Azure deployments in East US 2. These are deployment names, not necessarily model IDs:
 
-Images are stored in `data/artwork/` locally. Cosmos mode needs `ARTWORK_STORAGE_CONNECTION_STRING`; deployment creates a private `artwork` Blob container when enabled. The API serves images without exposing storage credentials. Spotify album art remains visible separately.
+```dotenv
+AI_BASE_URL=https://green-mos1tune-eastus2.openai.azure.com/openai/v1
+AI_AUTH_HEADER=api-key
+AI_API_KEY=your-own-azure-key
+AI_IMAGE_MODEL=gpt-image-2.5-flare
+AI_TRIVIA_MODEL=gpt-4o-facts
+ENABLE_ARTWORK=true
+ENABLE_TRIVIA=true
+ADDON_DAILY_LIMIT=unlimited
+```
 
-Trivia is published only when provider source annotations are present. Citations do not guarantee accuracy. Failed generation keeps the player usable and retries no sooner than one hour later. One track is processed per minute, capped at ten new tracks per UTC day by default. Each processed track can make two provider calls (one per enabled add-on). Failed attempts count toward the limit. Set provider spending limits separately; `ADDON_DAILY_LIMIT=0` stops new generation while retaining cached content.
+The artwork deployment is backed by `gpt-image-2.5-flare`; the trivia deployment is backed by `gpt-4o`. Forks must use their own Azure resource, key, and deployment names. Keep the key in ignored `.env` and Azure application settings, never in frontend code or Git.
 
-Provider references: [Image generation](https://developers.openai.com/api/docs/guides/image-generation), [web search](https://developers.openai.com/api/docs/guides/tools-web-search), [Azure/OpenAI endpoint differences](https://learn.microsoft.com/en-us/azure/foundry-classic/openai/how-to/switching-endpoints).
+**Artwork call:** `POST ${AI_BASE_URL}/images/edits`, authenticated with `api-key`. The multipart fields are `image[]` (the seed PNG), `model`, `n=1`, `size=1024x1024`, `quality=low`, `output_format=png`, and `prompt`. The prompt asks for a stylized circular song logo containing the song title, artist, and vibeQ, using `#C5FF3D`, `#F2F4EE`, and `#101013`. This follows the original vibeQ's seed-based approach. The PNG output keeps one format for local and cloud image serving. Generated covers replace album covers in Now playing, queue rows, Played, saved sets, and trivia cards; Spotify album art is the fallback while generation is pending or unavailable.
+
+**Trivia research call:** `POST ${AI_BASE_URL}/responses` with `model=gpt-4o-facts`, `store=false`, `tools=[{"type":"web_search"}]`, song/artist metadata as JSON input, and instructions to find five to seven short candidate lines. The editorial style favours specific recording stories, surprising history, and sourced misconceptions over generic chart summaries. Lyrics are described rather than quoted. Research without URL citation annotations is rejected.
+
+**Trivia formatting call:** a second `POST ${AI_BASE_URL}/responses`, using the same model and `store=false`, with no search tool. Its input contains only researched notes and their cited sources. `text.format` uses a strict `json_schema` named `jukebox_facts`: an object with an `items` array; each item has required `kind` (`fact` or `myth`), `text`, and `sourceUrl`, with no additional properties. Each displayed sentence is at most 200 characters. Items with URLs absent from the research source list are dropped. Myths must explicitly correct the misconception. Separating research from formatting follows the original app's implementation and avoids combining music web search and structured output in one request.
+
+The UI rotates one fact/myth card every 30 seconds, with previous, next, and pause controls. Tracks are interleaved across artists. The feed includes cached content from the current song, the queue, unarchived played songs, and saved sets, so browsing still works without active Spotify playback. Citations help readers check the material; they do not guarantee accuracy.
+
+The worker checks once per minute, prioritizes the current song, then works through room requests and saved sets, and processes at most one track per run under a distributed lease. A newly processed track normally makes **three provider calls**: one image edit, one research call, and one formatting call. Cached content is reused. Versioned cache records upgrade older poster artwork and paragraph trivia in the background. Failed add-ons retry no sooner than one hour later without interrupting playback.
+
+Images are stored in `data/artwork/` locally. Cosmos mode uses private Azure Blob storage; deployment creates the `artwork` container when `ENABLE_ARTWORK=true` and supplies `ARTWORK_STORAGE_CONNECTION_STRING`. `/api/artwork/<track-hash>?v=2` serves images without exposing storage credentials. Trivia and image references are stored in SQLite locally or Cosmos in Azure.
+
+The demo uses `ADDON_DAILY_LIMIT=unlimited`, so there is **no application-level daily allowance**. Forks default to ten processed tracks per UTC day and can set a nonnegative integer; failures count toward a finite allowance. `ADDON_DAILY_LIMIT=0` stops new generation while retaining cached content. Unlimited generation still uses provider quota and incurs provider charges; caching, one-track worker runs, and failure backoff remain in place.
+
+### Saving a set
+
+Open **Played**, optionally name the set, and choose **Save set**. The control is always visible when archives are enabled. If the host is signed out, it opens Host controls so the host can unlock and return to save. Only finished requested tracks are included; the currently playing track stays in the current session until it finishes. Saving stamps `archivedAt` without changing play history or FPQS debt. Saved sets appear in **Saved sets**, with generated covers, Spotify URI copying, and host-only replay. Browsing/copying saved sets requires no active Spotify device; replayed songs wait in the queue until playback is available.
+
+Provider references: [Microsoft image generation and editing](https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/dall-e), [Responses web search](https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/web-search), [structured outputs](https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/structured-outputs).
 
 ## Deploy an Azure demo
 

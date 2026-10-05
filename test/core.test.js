@@ -177,20 +177,43 @@ test('artwork is cached locally and daily limits bound new AI calls', async t =>
   assert.equal(calls, 1);
 });
 
-test('add-on worker reserves generation for the playing song and state explains limits', async t => {
-  const { cfg, store } = await fixture(t, { ENABLE_ARTWORK: 'true', ENABLE_TRIVIA: 'true', ADDON_DAILY_LIMIT: '2' });
-  const generated = [];
-  const app = createApp(cfg, store, { addons: { configured: () => true, async generate(song) { generated.push(song.trackUri); return { processed: song.trackUri }; } } });
-  await store.put('requests', request('pending'));
+test('unlimited add-ons generate and remain available without Spotify playback', async t => {
+  const { cfg, store } = await fixture(t, { ENABLE_ARTWORK: 'true', ENABLE_TRIVIA: 'true', AI_BASE_URL: 'https://provider.example/v1', AI_API_KEY: 'fake', AI_IMAGE_MODEL: 'image', AI_TRIVIA_MODEL: 'facts', ADDON_DAILY_LIMIT: 'unlimited' });
+  assert.equal(cfg.addonLimit, Infinity);
+  let calls = 0;
+  const output = text => ({ output: [{ type: 'message', content: [{ type: 'output_text', text }] }] });
+  const addons = createAddons(cfg, store, async (url, options) => {
+    calls++;
+    if (url.endsWith('/images/edits')) {
+      assert.ok(options.body instanceof FormData);
+      assert.ok(options.body.get('image[]').size > 0);
+      assert.equal(options.body.get('model'), 'image');
+      return new Response(JSON.stringify({ data: [{ b64_json: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6VbQAAAAASUVORK5CYII=' }] }));
+    }
+    const body = JSON.parse(options.body);
+    if (body.tools) {
+      const research = output('An unusual recording story.');
+      research.output[0].content[0].annotations = [{ type: 'url_citation', url: 'https://source.example/story', title: 'Recording story' }];
+      return new Response(JSON.stringify(research));
+    }
+    assert.ok(body.text.format.strict);
+    return new Response(JSON.stringify(output(JSON.stringify({ items: [
+      { kind: 'fact', text: 'An unusual recording story.', sourceUrl: 'https://source.example/story' },
+      { kind: 'fact', text: 'Invented citation must be dropped.', sourceUrl: 'https://invented.example' }
+    ] }))));
+  });
+  const app = createApp(cfg, store, { addons });
+  await store.put('requests', request('one', 'played', { playedAt: new Date().toISOString() }));
+  assert.ok((await app.generateAddons()).processed);
   assert.deepEqual(await app.generateAddons(), { idle: true });
-  assert.equal(generated.length, 0);
-  assert.equal((await (await app.handle(req('/state'))).json()).addonStatus.artwork, 'waiting-playback');
-  await store.put('system', { id: 'playback', data: { item, is_playing: false } });
-  assert.deepEqual(await app.generateAddons(), { idle: true });
-  await update(store, 'system', 'playback', old => ({ ...old, data: { item, is_playing: true } }));
-  await app.generateAddons();
-  assert.deepEqual(generated, [uri]);
-  await store.put('system', { id: `addon-budget-${new Date().toISOString().slice(0, 10)}`, count: 2 });
+  assert.equal(calls, 3);
   const state = await (await app.handle(req('/state'))).json();
-  assert.deepEqual(state.addonStatus, { artwork: 'daily-limit', trivia: 'daily-limit' });
+  assert.equal(state.playback.track, null);
+  assert.equal(state.triviaFeed.length, 1);
+  assert.equal(state.triviaFeed[0].text, 'An unusual recording story.');
+  assert.ok(state.played[0].customArt.endsWith('?v=2'));
+  const saved = await (await app.handle(req('/archives', {}, session(cfg)))).json();
+  const archive = await (await app.handle(req(`/archives?id=${saved.archive.id}`))).json();
+  assert.equal(archive.archive.tracks[0].customArt, state.played[0].customArt);
+  assert.equal((await (await app.handle(req('/state'))).json()).triviaFeed.length, 1);
 });

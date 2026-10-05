@@ -3,7 +3,7 @@ import { HttpError, equal, session, requireHost } from './auth.js';
 import { update, withLease, Conflict } from './store.js';
 import { Spotify, track } from './spotify.js';
 import { tick, fairSortPending } from './queue.js';
-import { addonKey, createAddons } from './addons.js';
+import { addonKey, createAddons, TRIVIA_VERSION } from './addons.js';
 
 const json = (body, status = 200, headers = {}) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...headers } });
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -100,13 +100,28 @@ export function createApp(cfg, store, options = {}) {
       const playback = await store.get('system', 'playback');
       const nowPlaying = track(playback?.data?.item);
       const nowAddon = nowPlaying ? cached.find(a => a.id === addonKey(nowPlaying.trackUri)) : null;
+      const archives = cfg.features.archives ? await store.list('archives') : [];
+      const subjects = [...new Map([...(nowPlaying ? [nowPlaying] : []), ...items.filter(r => ['pending', 'queued', 'playing', 'played'].includes(r.status) && !r.archivedAt), ...archives.sort((a,b) => Date.parse(b.savedAt) - Date.parse(a.savedAt)).flatMap(a => a.tracks)].map(song => [song.trackUri, song])).values()];
+      const triviaFor = song => { const addon = cached.find(a => a.id === addonKey(song.trackUri)); return addon?.triviaVersion === TRIVIA_VERSION ? addon.trivia || [] : []; };
+      const byArtist = new Map();
+      for (const song of subjects) {
+        const facts = cfg.features.trivia ? triviaFor(song).map(fact => ({ ...fact, trackUri: song.trackUri, trackName: song.trackName, artist: song.artist, customArt: enrich(song).customArt, albumArt: song.albumArt })) : [];
+        if (!facts.length) continue;
+        const artist = String(song.artist || 'Unknown artist').toLowerCase();
+        if (!byArtist.has(artist)) byArtist.set(artist, []);
+        byArtist.get(artist).push(facts);
+      }
+      const subjectFacts = [];
+      while ([...byArtist.values()].some(bucket => bucket.length)) for (const bucket of byArtist.values()) if (bucket.length) subjectFacts.push(bucket.shift());
+      const triviaFeed = [];
+      for (let depth = 0; depth < 8; depth++) for (const facts of subjectFacts) if (facts[depth]) triviaFeed.push(facts[depth]);
       const budget = await store.get('system', `addon-budget-${new Date().toISOString().slice(0, 10)}`);
       const addonStatus = Object.fromEntries(['artwork', 'trivia'].map(kind => [kind,
         !cfg.features[kind] ? 'disabled' : !addons.configured(kind) ? 'unconfigured' : !nowPlaying ? 'waiting-playback' :
-        nowAddon?.[kind] ? 'ready' : nowAddon?.failedAt?.[kind] && Date.now() - nowAddon.failedAt[kind] < 3600000 ? 'unavailable' :
+        (kind === 'trivia' ? nowAddon?.triviaVersion === TRIVIA_VERSION && nowAddon.trivia?.length : nowAddon?.artwork) ? 'ready' : nowAddon?.failedAt?.[kind] && Date.now() - nowAddon.failedAt[kind] < 3600000 ? 'unavailable' :
         (budget?.count || 0) >= cfg.addonLimit ? 'daily-limit' : 'generating'
       ]));
-      return json({ connected: Boolean(await store.get('system', 'spotify')), playback: { track: nowPlaying, isPlaying: playback?.data?.is_playing || false, deviceName: playback?.data?.device?.name || null, checkedAt: playback?.checkedAt || null }, pending: sorted.map(r => ({ ...enrich(r), fairScore: scoreOf[r.id] })), queued: items.filter(r => ['queued', 'submitting'].includes(r.status)).sort((a,b) => Date.parse(a.queuedAt) - Date.parse(b.queuedAt)).map(enrich), played: items.filter(r => ['played', 'playing'].includes(r.status) && !r.archivedAt).sort((a,b) => Date.parse(b.playedAt) - Date.parse(a.playedAt)).slice(0, 50).map(enrich), addonStatus, trivia: cfg.features.trivia ? nowAddon?.trivia || [] : [], customArt: cfg.features.artwork ? nowAddon?.artwork || null : null });
+      return json({ connected: Boolean(await store.get('system', 'spotify')), playback: { track: nowPlaying, isPlaying: playback?.data?.is_playing || false, deviceName: playback?.data?.device?.name || null, checkedAt: playback?.checkedAt || null }, pending: sorted.map(r => ({ ...enrich(r), fairScore: scoreOf[r.id] })), queued: items.filter(r => ['queued', 'submitting'].includes(r.status)).sort((a,b) => Date.parse(a.queuedAt) - Date.parse(b.queuedAt)).map(enrich), played: items.filter(r => ['played', 'playing'].includes(r.status) && !r.archivedAt).sort((a,b) => Date.parse(b.playedAt) - Date.parse(a.playedAt)).slice(0, 50).map(enrich), addonStatus, triviaFeed, trivia: cfg.features.trivia && nowPlaying ? triviaFor(nowPlaying) : [], customArt: cfg.features.artwork ? nowAddon?.artwork || null : null });
     }
     if (path === '/api/requests' && method === 'POST') {
       const data = await body(request), guestId = guest(data.guestId);
@@ -151,7 +166,7 @@ export function createApp(cfg, store, options = {}) {
       feature('archives');
       const archives = await store.list('archives');
       const id = url.searchParams.get('id');
-      if (id) { const archive = archives.find(a => a.id === id); if (!archive) throw new HttpError(404, 'Archive not found.'); return json({ archive: cleanRequest(archive) }); }
+      if (id) { const archive = archives.find(a => a.id === id); if (!archive) throw new HttpError(404, 'Archive not found.'); const cached = cfg.features.artwork ? await store.list('addons') : []; return json({ archive: { ...cleanRequest(archive), tracks: archive.tracks.map(song => ({ ...song, customArt: cached.find(a => a.id === addonKey(song.trackUri))?.artwork || null })) } }); }
       return json({ archives: archives.sort((a,b) => Date.parse(b.savedAt) - Date.parse(a.savedAt)).map(a => ({ id: a.id, name: a.name, savedAt: a.savedAt, trackCount: a.tracks.length })) });
     }
     if (path === '/api/archives' && method === 'POST') {
@@ -162,7 +177,7 @@ export function createApp(cfg, store, options = {}) {
         const priorIds = new Set(archives.flatMap(a => a.requestIds));
         const requests = (await store.list('requests')).filter(r => r.status === 'played' && !r.archivedAt && !priorIds.has(r.id)).sort((a,b) => Date.parse(a.playedAt) - Date.parse(b.playedAt));
         if (!requests.length) throw new HttpError(409, 'No completed tracks to archive yet.');
-        const archive = { id: randomUUID(), name: String(data.name || 'Saved session').trim().slice(0, 100), savedAt: new Date().toISOString(), tracks: requests.map(cleanRequest), requestIds: requests.map(r => r.id) };
+        const archive = { id: randomUUID(), name: String(data.name || `Set ${new Date().toLocaleString('en-CA', { timeZone: 'UTC' })} UTC`).trim().slice(0, 100), savedAt: new Date().toISOString(), tracks: requests.map(cleanRequest), requestIds: requests.map(r => r.id) };
         await store.put('archives', archive);
         for (const request of requests) await update(store, 'requests', request.id, before => ({ ...before, archivedAt: archive.savedAt }));
         return { archive: cleanRequest(archive) };
@@ -217,9 +232,14 @@ export function createApp(cfg, store, options = {}) {
       if (!cfg.features.artwork && !cfg.features.trivia) return { idle: true };
       const playback = await store.get('system', 'playback');
       const current = track(playback?.data?.item);
-      // Reserve the allowance for songs listeners actually hear.
-      if (!current || !playback?.data?.is_playing) return { idle: true };
-      return addons.generate(current);
+      const requests = (await store.list('requests')).filter(r => ['pending', 'queued', 'playing', 'played'].includes(r.status) && !r.archivedAt).sort((a,b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+      const archives = cfg.features.archives ? await store.list('archives') : [];
+      const candidates = [...new Map([...(current ? [current] : []), ...requests, ...archives.sort((a,b) => Date.parse(b.savedAt) - Date.parse(a.savedAt)).flatMap(a => a.tracks)].map(song => [song.trackUri, song])).values()];
+      for (const song of candidates) {
+        const result = await addons.generate(song);
+        if (result.processed || result.busy || result.limit) return result;
+      }
+      return { idle: true };
     },
   };
 }

@@ -91,7 +91,7 @@ Open **http://127.0.0.1:3001/player/**. Restore both settings to port 5173 for V
 
 ## Run with Docker
 
-Docker support starts with v1.0.1. No Docker image was included in v1.0.0; use a GHCR tag only after its release workflow succeeds. See [Docker validation](docs/docker-validation.md) for verified coverage and outstanding account checks.
+Docker support starts with [v1.0.1](https://github.com/vibeQ-player/vibeq/releases/tag/v1.0.1), available as a [public GitHub package](https://github.com/vibeQ-player/vibeq/pkgs/container/vibeq) for Linux amd64. No Docker image was included in v1.0.0. See [Docker validation](docs/docker-validation.md) for verified coverage and polling limitations.
 
 On Windows, install Docker Desktop, select Linux containers and use its WSL 2 backend. Run `wsl --version`, `wsl --status` and `docker version` first. Docker must report both a client and a Linux server. If WSL is outdated, run `wsl --update` (or `wsl --update --web-download`), complete any Windows administrator prompt, and restart Docker Desktop. A Windows restart may be required.
 
@@ -132,15 +132,15 @@ This automated test uses generated credentials, a disposable container and a sep
 
 For a source update, pull the desired revision, then run `docker compose build --pull` and `docker compose up -d`. The volume remains attached.
 
-Once a Docker release is published successfully, use its exact tag from GitHub Packages:
+To run the published image from GitHub Packages:
 
 ```powershell
-$env:VIBEQ_IMAGE = 'ghcr.io/vibeq-player/vibeq:vX.Y.Z'
+$env:VIBEQ_IMAGE = 'ghcr.io/vibeq-player/vibeq:v1.0.1'
 docker compose pull
 docker compose up -d --no-build
 ```
 
-Replace `vX.Y.Z` with an actual published Docker release. On macOS/Linux use `export VIBEQ_IMAGE=ghcr.io/vibeq-player/vibeq:vX.Y.Z`. Use the same setting for subsequent Compose commands. GHCR packages may initially be private; the repository owner must make the package public for anonymous pulls, or users must authenticate with package read access.
+On macOS/Linux use `export VIBEQ_IMAGE=ghcr.io/vibeq-player/vibeq:v1.0.1`. Use the same setting for subsequent Compose commands. To update, choose another successfully published release tag, pull it, then recreate the container with `docker compose up -d --no-build`. The v1.0.1 package is public and does not require registry authentication.
 
 The Docker Actions workflow builds and tests Linux amd64 on pull requests, main pushes and manual runs. A published versioned GitHub Release publishes the **same tested image** to `ghcr.io/vibeq-player/vibeq:<release-tag>` using the workflow's `GITHUB_TOKEN` and `packages: write`. It refuses `v1.0.0`. Choose the version introducing Docker support when releasing; other architectures remain unverified.
 

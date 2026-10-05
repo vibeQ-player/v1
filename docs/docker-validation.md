@@ -14,7 +14,9 @@
 - Live Spotify authorization and search passed. Observed a requested song transition from playing to completed history and the next request start playing. A named validation set was saved from real completed history. Device listing and a volume command preserving the current volume passed; Spotify rejected a resume command while already playing.
 - Live testing exposed successful command responses containing opaque non-JSON acknowledgements. Fixed playback commands to accept successful 2xx responses without JSON parsing. Playback observation now precedes queue reads, records transitions even when the new track is paused, preserves history across queue-read failures, and matches Spotify's relinked track URI. Regression tests cover these cases; the rebuilt image and container smoke tests passed.
 - Songs played or skipped entirely between worker polls cannot be reconstructed from current playback. Previously unobserved requests marked skipped have not been fabricated into completed history.
-- Initial GitHub application and Docker workflows passed for commit `35da2b6`. The queue fix will be validated again before the requested `v1.0.1` GHCR publication.
+- GitHub application and Docker workflows passed for the queue fix at commit `2dbba37`; the [release publishing workflow](https://github.com/vibeQ-player/vibeq/actions/runs/37317193651) also passed.
+- [v1.0.1](https://github.com/vibeQ-player/vibeq/releases/tag/v1.0.1) is published. The [public GitHub package](https://github.com/vibeQ-player/vibeq/pkgs/container/vibeq) is `ghcr.io/vibeq-player/vibeq:v1.0.1`, Linux amd64, digest `sha256:63fe3fa448ef32c7826089e99d7be28f15ad3b796f4e3139c4d471be24bcbe34`.
+- Pulled the published package and ran `node scripts/docker-smoke.js ghcr.io/vibeq-player/vibeq:v1.0.1`; all container checks passed. The real validation set also survived replacing the room container; Spotify authorization remained connected.
 
 ## Automated validation
 

@@ -1,6 +1,6 @@
 # Docker implementation plan
 
-Status: local Linux amd64 build, container/storage checks, live Spotify queue/history checks and live AI provider tests passed; GHCR publication pending. Live testing identified and fixed Spotify command acknowledgement parsing and playback reconciliation. See [validation results and checklist](docker-validation.md). Docker support is targeted for v1.0.1. The v1.0.0 release supports the documented Node.js setup; it does not include a Docker image.
+Status: v1.0.1 released with a public Linux amd64 image in GitHub Container Registry. Local build, container/storage checks, live Spotify queue/history checks and live AI provider tests passed. The published image was pulled and passed the container tests. Live testing identified and fixed Spotify command acknowledgement parsing and playback reconciliation. See [validation results and checklist](docker-validation.md). The v1.0.0 release supports the documented Node.js setup; it does not include a Docker image.
 
 Docker will provide a repeatable way to run the standalone player locally, with SQLite and optional artwork and trivia. Azure remains an optional deployment choice.
 

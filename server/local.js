@@ -35,18 +35,22 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': mime[extension] || 'application/octet-stream', 'X-Content-Type-Options': 'nosniff' }); res.end(content);
   } catch { res.writeHead(500); res.end('Build the frontend with npm run build, or use npm run dev.'); }
 });
-server.listen(cfg.port, '127.0.0.1', () => console.log(`vibeQ API: http://127.0.0.1:${cfg.port} · ${cfg.storage} storage`));
+server.listen(cfg.port, cfg.host, () => console.log(`vibeQ API: http://${cfg.host}:${cfg.port} · ${cfg.storage} storage`));
 async function queueLoop() {
   try { await app.tick(); } catch (error) { console.warn('Queue worker:', error.message); }
-  queueTimer = setTimeout(queueLoop, 15000);
+  if (!stopping) queueTimer = setTimeout(() => { queueWork = queueLoop(); }, 15000);
 }
 async function addonLoop() {
   try { await app.generateAddons(); } catch (error) { console.warn('Add-on worker:', error.message); }
-  addonTimer = setTimeout(addonLoop, 60000);
+  if (!stopping) addonTimer = setTimeout(() => { addonWork = addonLoop(); }, 60000);
 }
-let queueTimer, addonTimer;
-queueLoop(); addonLoop();
-for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
+let queueTimer, addonTimer, stopping = false;
+let queueWork = queueLoop(), addonWork = addonLoop();
+for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, async () => {
+  if (stopping) return;
+  stopping = true;
   clearTimeout(queueTimer); clearTimeout(addonTimer);
-  server.close(() => { store.close(); process.exit(0); });
+  await Promise.all([new Promise(resolve => server.close(resolve)), queueWork, addonWork]);
+  store.close();
+  console.log('vibeQ stopped; database closed.');
 });

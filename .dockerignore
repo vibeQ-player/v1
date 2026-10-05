@@ -1,0 +1,23 @@
+# Allow only inputs used by the recipe. Workstation data never enters the context.
+**
+!Dockerfile
+!package.json
+!package-lock.json
+!index.html
+!vite.config.js
+!src/
+!src/**
+!player/
+!player/**
+!public/
+!public/**
+!server/
+!server/**
+**/.env*
+**/node_modules
+**/*.sqlite*
+**/*.db*
+**/*.log
+**/*.pem
+**/*.key
+**/local.settings.json

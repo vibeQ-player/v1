@@ -1,0 +1,48 @@
+name: Test and publish Docker image
+on:
+  push:
+    branches: [main]
+  pull_request:
+  release:
+    types: [published]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - name: Build Linux amd64 image
+        run: docker build --pull --platform linux/amd64 -t vibeq:test .
+      - name: Validate container and persistent storage
+        run: node scripts/docker-smoke.js vibeq:test
+      - name: Validate Docker release tag
+        if: github.event_name == 'release'
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$ ]] || { echo 'Use a version release tag.'; exit 1; }
+          [[ "$RELEASE_TAG" != 'v1.0.0' ]] || { echo 'v1.0.0 did not include Docker support.'; exit 1; }
+      - name: Publish the tested image to GitHub Packages
+        if: github.event_name == 'release'
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+          REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          IMAGE="ghcr.io/${REPOSITORY,,}"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+          docker tag vibeq:test "$IMAGE:$RELEASE_TAG"
+          docker push "$IMAGE:$RELEASE_TAG"
+          docker logout ghcr.io

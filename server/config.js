@@ -2,6 +2,7 @@ import path from 'node:path';
 export function config(env = process.env) {
   const flag = (key, fallback = false) => env[key] === undefined ? fallback : env[key] === 'true';
   const cfg = {
+    host: env.HOST || '127.0.0.1',
     port: Number(env.PORT || 3001), origin: env.APP_ORIGIN || 'http://127.0.0.1:5173',
     redirectUri: env.SPOTIFY_REDIRECT_URI || 'http://127.0.0.1:5173/api/spotify/callback',
     clientId: env.SPOTIFY_CLIENT_ID || '', clientSecret: env.SPOTIFY_CLIENT_SECRET || '',

@@ -1,0 +1,23 @@
+services:
+  vibeq:
+    image: ${VIBEQ_IMAGE:-vibeq:local}
+    build: .
+    ports:
+      - "127.0.0.1:3001:3001"
+    env_file:
+      - .env.docker
+    environment:
+      HOST: 0.0.0.0
+      PORT: "3001"
+      APP_ORIGIN: http://127.0.0.1:3001
+      SPOTIFY_REDIRECT_URI: http://127.0.0.1:3001/api/spotify/callback
+      DATA_DIR: /app/data
+      STORAGE_DRIVER: sqlite
+    volumes:
+      - vibeq-data:/app/data
+    restart: unless-stopped
+    # Artwork plus trivia can make three sequential 90-second provider requests.
+    stop_grace_period: 6m
+
+volumes:
+  vibeq-data:

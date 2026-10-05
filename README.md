@@ -89,6 +89,84 @@ npm start
 
 Open **http://127.0.0.1:3001/player/**. Restore both settings to port 5173 for Vite development. Keep `PORT=3001` unless you also edit the Vite proxy. The local server binds to loopback; LAN/public hosting requires an HTTPS reverse proxy and matching origin settings.
 
+## Run with Docker
+
+Docker support starts with v1.0.1. No Docker image was included in v1.0.0; use a GHCR tag only after its release workflow succeeds. See [Docker validation](docs/docker-validation.md) for verified coverage and outstanding account checks.
+
+On Windows, install Docker Desktop, select Linux containers and use its WSL 2 backend. Run `wsl --version`, `wsl --status` and `docker version` first. Docker must report both a client and a Linux server. If WSL is outdated, run `wsl --update` (or `wsl --update --web-download`), complete any Windows administrator prompt, and restart Docker Desktop. A Windows restart may be required.
+
+A **Dockerfile** is the image recipe; an **image** is the built application; a **container** is a running instance. **Compose** supplies its environment, port and persistent volume.
+
+From this repository:
+
+```powershell
+Copy-Item .env.docker.example .env.docker
+```
+
+Use `cp` on macOS/Linux. Edit `.env.docker` with your own `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, `HOST_PASSWORD` (12+ characters) and `SESSION_SECRET` (32+ characters). Generate two different secrets using the command in **Run locally** above. Credentials are supplied at runtime and excluded from the image; never add them as build arguments or `VITE_*` variables.
+
+Register this exact callback in your Spotify developer app:
+
+```text
+http://127.0.0.1:3001/api/spotify/callback
+```
+
+```powershell
+docker compose build --pull --no-cache
+docker compose up -d
+docker compose ps
+docker compose logs --tail 50
+```
+
+Open **http://127.0.0.1:3001/** or **http://127.0.0.1:3001/player/**. Compose publishes only to your computer's loopback address. The Node process binds to `0.0.0.0` inside the container so Docker can reach it. Unlock Host controls, connect Spotify and select an active Spotify Connect device. Public hosting requires an HTTPS reverse proxy and matching origin/callback configuration; the supplied Compose file is for local use.
+
+The `vibeq-data` named volume at `/app/data` preserves the queue, played history, saved sets, Spotify authorization and generated artwork. It starts writable by the non-root `node` user. Run only one instance per volume. Artwork and trivia are disabled by default. To enable them, set the provider settings described in **Optional add-ons** in `.env.docker`, then run `docker compose up -d --force-recreate`. A changed environment file requires container recreation.
+
+### Test and update the image
+
+```powershell
+node scripts/docker-smoke.js vibeq:local
+```
+
+This automated test uses generated credentials, a disposable container and a separate test volume. It checks homepage/player HTTP responses, API health, host sign-in, OAuth callback URL, voting, fair-score state, saving a set, graceful shutdown, replacement persistence, restart, volume permissions and runtime contents. It does not authorize Spotify or contact AI providers. `npm run check` separately tests search, OAuth, playback, FPQS and add-ons with mocked providers. Finish the real-account checklist in [Docker validation](docs/docker-validation.md) before declaring a release tested.
+
+For a source update, pull the desired revision, then run `docker compose build --pull` and `docker compose up -d`. The volume remains attached.
+
+Once a Docker release is published successfully, use its exact tag from GitHub Packages:
+
+```powershell
+$env:VIBEQ_IMAGE = 'ghcr.io/vibeq-player/vibeq:vX.Y.Z'
+docker compose pull
+docker compose up -d --no-build
+```
+
+Replace `vX.Y.Z` with an actual published Docker release. On macOS/Linux use `export VIBEQ_IMAGE=ghcr.io/vibeq-player/vibeq:vX.Y.Z`. Use the same setting for subsequent Compose commands. GHCR packages may initially be private; the repository owner must make the package public for anonymous pulls, or users must authenticate with package read access.
+
+The Docker Actions workflow builds and tests Linux amd64 on pull requests, main pushes and manual runs. A published versioned GitHub Release publishes the **same tested image** to `ghcr.io/vibeq-player/vibeq:<release-tag>` using the workflow's `GITHUB_TOKEN` and `packages: write`. It refuses `v1.0.0`. Choose the version introducing Docker support when releasing; other architectures remain unverified.
+
+### Stop and back up data
+
+`docker compose stop` stops the app; `docker compose down` removes its container/network and **keeps the named volume**. `docker compose down -v` explicitly **deletes the volume and all its data**.
+
+Back up while stopped so SQLite and artwork form a consistent snapshot:
+
+```powershell
+docker compose stop
+docker compose cp vibeq:/app/data ./vibeq-backup
+docker compose start
+```
+
+Use a new backup directory for each snapshot. Backups contain Spotify tokens; keep them private. To restore a backup containing `vibeq.sqlite` and optional `artwork/`, stop the container, copy the backup's contents into `/app/data`, and restore ownership before starting:
+
+```powershell
+docker compose stop
+docker compose cp ./vibeq-backup/. vibeq:/app/data
+docker compose run --rm --no-deps --user root --entrypoint chown vibeq -R node:node /app/data
+docker compose start
+```
+
+Restore into an empty/new data volume to avoid mixing old artwork or SQLite WAL files with the backup. Keep the same `SESSION_SECRET` if you want existing host sessions to remain valid.
+
 ## Optional add-ons
 
 | Setting | Default | Requirements |

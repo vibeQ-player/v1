@@ -1,6 +1,6 @@
 {
   "name": "vibeq-player",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "type": "module",
   "engines": { "node": ">=22.13.0" },

@@ -8,7 +8,7 @@ import { createStore, Conflict, update, withLease } from '../server/store.js';
 import { createApp } from '../server/app.js';
 import { session, requireHost } from '../server/auth.js';
 import { fairSortPending, tick } from '../server/queue.js';
-import { citedTrivia, createAddons } from '../server/addons.js';
+import { addonKey, citedTrivia, createAddons, triviaKey } from '../server/addons.js';
 import { Spotify } from '../server/spotify.js';
 
 const uri = 'spotify:track:1234567890123456789012';
@@ -261,4 +261,40 @@ test('unlimited add-ons generate and remain available without Spotify playback',
   const archive = await (await app.handle(req(`/archives?id=${saved.archive.id}`))).json();
   assert.equal(archive.archive.tracks[0].customArt, state.played[0].customArt);
   assert.equal((await (await app.handle(req('/state'))).json()).triviaFeed.length, 1);
+});
+
+test('imported trivia is reused across track URIs without consuming the AI allowance', async t => {
+  const { cfg, store } = await fixture(t, { ENABLE_TRIVIA: 'true', AI_BASE_URL: 'https://provider.example/v1', AI_API_KEY: 'fake', AI_TRIVIA_MODEL: 'facts', ADDON_DAILY_LIMIT: '0' });
+  const song = request('one');
+  const items = [{ kind: 'fact', text: 'A sourced fact.', sources: [{ url: 'https://source.example', title: 'Source' }] }];
+  await store.put('trivia', { id: triviaKey(song), items });
+  const alias = { ...song, trackUri: 'spotify:track:2234567890123456789012', trackName: `  ${song.trackName.toUpperCase()}  ` };
+  const addons = createAddons(cfg, store, () => assert.fail('Cached trivia must not call AI'));
+  assert.deepEqual(await addons.generate(alias), { idle: true });
+  assert.deepEqual((await store.get('addons', addonKey(alias.trackUri))).trivia, items);
+});
+
+test('trivia records billed stages and uses bounded research with a separate formatter', async t => {
+  const { cfg, store } = await fixture(t, { ENABLE_TRIVIA: 'true', AI_BASE_URL: 'https://provider.example/v1', AI_API_KEY: 'fake', AI_TRIVIA_MODEL: 'research', AI_TRIVIA_FORMAT_MODEL: 'formatter', AI_TRIVIA_SEARCH_TOOL: 'web_search_preview', ADDON_DAILY_LIMIT: 'unlimited' });
+  let calls = 0;
+  const addons = createAddons(cfg, store, async (_url, options) => {
+    calls++;
+    const body = JSON.parse(options.body);
+    assert.equal(body.max_output_tokens, 1536);
+    const isResearch = Boolean(body.tools);
+    assert.equal(body.model, isResearch ? 'research' : 'formatter');
+    if (isResearch) assert.deepEqual(body.tools, [{ type: 'web_search_preview', search_context_size: 'low' }]);
+    return new Response(JSON.stringify({ usage: { input_tokens: 100, output_tokens: 20, total_tokens: 120 }, output: [
+      ...(isResearch ? [{ type: 'web_search_call' }] : []),
+      { type: 'message', content: [{ type: 'output_text', text: isResearch ? 'A sourced fact.' : JSON.stringify({ items: [{ kind: 'fact', text: 'A sourced fact.', sourceUrl: 'https://source.example' }] }), annotations: [{ type: 'url_citation', url: 'https://source.example' }] }] }
+    ] }));
+  });
+  const song = request('one');
+  await addons.generate(song);
+  await addons.generate({ ...song, trackUri: 'spotify:track:2234567890123456789012' });
+  assert.equal(calls, 2);
+  const usage = await store.list('aiUsage');
+  assert.equal(usage.length, 1);
+  assert.equal(usage[0].stages.research.searches, 1);
+  assert.equal(usage[0].stages.format.usage.total_tokens, 120);
 });

@@ -213,32 +213,34 @@ Artwork uses `POST /images/edits` with multipart form data and the bundled `serv
 
 ### Hosted demo AI configuration
 
-The live demo reuses existing Azure deployments in East US 2. These are deployment names, not necessarily model IDs:
+The live demo uses the dedicated `vqplayer261002-ai` resource in East US 2, inside `rg-vibeq-player-demo-20261002`. Future demo AI charges belong to that group; earlier charges stay on the resource that served those requests. These are deployment names, not necessarily model IDs:
 
 ```dotenv
-AI_BASE_URL=https://green-mos1tune-eastus2.openai.azure.com/openai/v1
+AI_BASE_URL=https://vqplayer261002-ai.openai.azure.com/openai/v1
 AI_AUTH_HEADER=api-key
 AI_API_KEY=your-own-azure-key
 AI_IMAGE_MODEL=gpt-image-2.5-flare
 AI_TRIVIA_MODEL=gpt-4o-facts
+AI_TRIVIA_FORMAT_MODEL=gpt-4o-mini-format
+AI_TRIVIA_SEARCH_TOOL=web_search_preview
 ENABLE_ARTWORK=true
 ENABLE_TRIVIA=true
 ADDON_DAILY_LIMIT=unlimited
 ```
 
-The artwork deployment is backed by `gpt-image-2.5-flare`; the trivia deployment is backed by `gpt-4o`. Forks must use their own Azure resource, key, and deployment names. Keep the key in ignored `.env` and Azure application settings, never in frontend code or Git.
+Artwork uses `gpt-image-2.5-flare`, research uses `gpt-4o`, and formatting uses `gpt-4o-mini`. All are usage-billed GlobalStandard deployments. Forks must use their own Azure resource, key, and deployment names. Keep the key in ignored `.env` and Azure application settings, never in frontend code or Git.
 
 **Artwork call:** `POST ${AI_BASE_URL}/images/edits`, authenticated with `api-key`. The multipart fields are `image[]` (the seed PNG), `model`, `n=1`, `size=1024x1024`, `quality=low`, `output_format=png`, and `prompt`. The prompt asks for a stylized circular song logo containing the song title, artist, and vibeQ, using `#C5FF3D`, `#F2F4EE`, and `#101013`. This follows the original vibeQ's seed-based approach. The PNG output keeps one format for local and cloud image serving. Generated covers replace album covers in Now playing, queue rows, Played, saved sets, and trivia cards; Spotify album art is the fallback while generation is pending or unavailable.
 
-**Trivia research call:** `POST ${AI_BASE_URL}/responses` with `model=gpt-4o-facts`, `store=false`, `tools=[{"type":"web_search"}]`, song/artist metadata as JSON input, and instructions to find five to seven short candidate lines. The editorial style favours specific recording stories, surprising history, and sourced misconceptions over generic chart summaries. Lyrics are described rather than quoted. Research without URL citation annotations is rejected.
+**Trivia research call:** `POST ${AI_BASE_URL}/responses` with `model=gpt-4o-facts`, `store=false`, `max_output_tokens=1536`, and `tools=[{"type":"web_search_preview","search_context_size":"low"}]`. Song/artist metadata is JSON input, with instructions to find five to seven short candidate lines. The editorial style favours specific recording stories, surprising history, and sourced misconceptions over generic chart summaries. Lyrics are described rather than quoted. Research without URL citation annotations is rejected. The general default is `web_search`; the demo explicitly selects the original app's preview tool. Microsoft recommends the newer tool, but preview search used fewer input tokens in our same-song comparison. This sample does not guarantee identical savings for every song.
 
-**Trivia formatting call:** a second `POST ${AI_BASE_URL}/responses`, using the same model and `store=false`, with no search tool. Its input contains only researched notes and their cited sources. `text.format` uses a strict `json_schema` named `jukebox_facts`: an object with an `items` array; each item has required `kind` (`fact` or `myth`), `text`, and `sourceUrl`, with no additional properties. Each displayed sentence is at most 200 characters. Items with URLs absent from the research source list are dropped. Myths must explicitly correct the misconception. Separating research from formatting follows the original app's implementation and avoids combining music web search and structured output in one request.
+**Trivia formatting call:** a second `POST ${AI_BASE_URL}/responses`, using `gpt-4o-mini-format`, `store=false`, and `max_output_tokens=1536`, with no search tool. `AI_TRIVIA_FORMAT_MODEL` defaults to the research model when unset. Its input contains only researched notes and their cited sources. `text.format` uses a strict `json_schema` named `jukebox_facts`: an object with an `items` array; each item has required `kind` (`fact` or `myth`), `text`, and `sourceUrl`, with no additional properties. Each displayed sentence is at most 200 characters. Items with URLs absent from the research source list are dropped. Myths must explicitly correct the misconception. Separating research from formatting follows the original app's implementation and avoids combining music web search and structured output in one request.
 
 The UI rotates one fact/myth card every 30 seconds, with previous, next, and pause controls. Tracks are interleaved across artists. The feed includes cached content from the current song, the queue, unarchived played songs, and saved sets, so browsing still works without active Spotify playback. Citations help readers check the material; they do not guarantee accuracy.
 
-The worker checks once per minute, prioritizes the current song, then works through room requests and saved sets, and processes at most one track per run under a distributed lease. A newly processed track normally makes **three provider calls**: one image edit, one research call, and one formatting call. Cached content is reused. Versioned cache records upgrade older poster artwork and paragraph trivia in the background. Failed add-ons retry no sooner than one hour later without interrupting playback.
+The worker checks once per minute, prioritizes the current song, then works through room requests and saved sets, and processes at most one track per run under a distributed lease. A completely uncached track normally makes **three provider calls**: one image edit, one research call, and one formatting call. Ready trivia is cached by normalized title and artist and reused across Spotify track URIs. Completed canonical entries remain valid when models or prompts change, so routine upgrades do not trigger new research. The demo has imported compatible trivia and artwork from the original app into its own storage. Failed add-ons retry no sooner than one hour later without interrupting playback. Each billed stage records provider token usage, model and search-call counts in the private `aiUsage` collection, including responses later rejected by validation; those records contain no keys and are not exposed through public state.
 
-Images are stored in `data/artwork/` locally. Cosmos mode uses private Azure Blob storage; deployment creates the `artwork` container when `ENABLE_ARTWORK=true` and supplies `ARTWORK_STORAGE_CONNECTION_STRING`. `/api/artwork/<track-hash>?v=2` serves images without exposing storage credentials. Trivia and image references are stored in SQLite locally or Cosmos in Azure.
+Images are stored in `data/artwork/` locally. Cosmos mode uses private Azure Blob storage; deployment creates the `artwork` container when `ENABLE_ARTWORK=true` and supplies `ARTWORK_STORAGE_CONNECTION_STRING`. `/api/artwork/<track-hash>?v=2` serves generated PNGs and imported JPEGs with their matching content types, without exposing storage credentials. Trivia and image references are stored in SQLite locally or Cosmos in Azure.
 
 The demo uses `ADDON_DAILY_LIMIT=unlimited`, so there is **no application-level daily allowance**. Forks default to ten processed tracks per UTC day and can set a nonnegative integer; failures count toward a finite allowance. `ADDON_DAILY_LIMIT=0` stops new generation while retaining cached content. Unlimited generation still uses provider quota and incurs provider charges; caching, one-track worker runs, and failure backoff remain in place.
 

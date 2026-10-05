@@ -206,7 +206,8 @@ export function createApp(cfg, store, options = {}) {
       return json(result);
     }
     if (path.startsWith('/api/artwork/') && method === 'GET') {
-      return new Response(await addons.image(path.split('/').pop()), { headers: { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400' } });
+      const bytes = await addons.image(path.split('/').pop());
+      return new Response(bytes, { headers: { 'Content-Type': bytes[0] === 0xff && bytes[1] === 0xd8 ? 'image/jpeg' : 'image/png', 'Cache-Control': 'public, max-age=86400' } });
     }
     throw new HttpError(404, 'Endpoint not found.');
   }

@@ -119,10 +119,11 @@ test('queue advances without a browser and preserves paused buffered tracks', as
   const { store } = await fixture(t);
   await store.put('system', { id: 'spotify' }); await store.put('requests', request('one'));
   const calls = [];
-  const spotify = { async call(endpoint, method) { calls.push([endpoint, method]); if (endpoint === 'me/player') return { device: { id: 'device' }, item, is_playing: true }; if (endpoint === 'me/player/queue') return { currently_playing: item, queue: [] }; return null; } };
+  const other = { ...item, uri: 'spotify:track:2234567890123456789012' };
+  const spotify = { async call(endpoint, method) { calls.push([endpoint, method]); if (endpoint === 'me/player') return { device: { id: 'device' }, item: other, is_playing: true }; if (endpoint === 'me/player/queue') return { currently_playing: other, queue: [] }; return null; } };
   await tick(store, spotify); assert.equal((await store.get('requests', 'one')).status, 'queued');
   assert.equal(calls.filter(([,method]) => method === 'POST').length, 1);
-  const paused = { async call() { return { device: { id: 'device' }, item, is_playing: false }; } };
+  const paused = { async call() { return { device: { id: 'device' }, item: other, is_playing: false }; } };
   await tick(store, paused); assert.equal((await store.get('requests', 'one')).status, 'queued');
 });
 test('ambiguous Spotify POST is not retried and dropped tracks do not enter played history', async t => {
@@ -134,6 +135,50 @@ test('ambiguous Spotify POST is not retried and dropped tracks do not enter play
   await tick(store, spotify); assert.equal(posts, 1);
   await update(store, 'requests', 'one', old => ({ ...old, queuedAt: new Date(Date.now() - 240000).toISOString() }));
   await tick(store, spotify); assert.equal((await store.get('requests', 'one')).status, 'skipped');
+});
+
+test('successful Spotify playback commands accept empty and opaque acknowledgements', async t => {
+  const { cfg, store } = await fixture(t);
+  await store.put('system', { id: 'spotify', accessToken: 'token', expiresAt: Date.now() + 3600000 });
+  for (const [status, body] of [[200, 'opaque-queue-ack'], [202, ''], [204, null]]) {
+    const spotify = new Spotify(cfg, store, async () => new Response(body, { status }));
+    assert.equal(await spotify.call('me/player/queue?uri=test', 'POST'), null);
+    assert.equal(await spotify.call('me/player/pause', 'PUT'), null);
+  }
+  const malformed = new Spotify(cfg, store, async () => new Response('opaque-queue-ack'));
+  await assert.rejects(malformed.call('me/player'), error => error.status === 502 && !error.message.includes('opaque-queue-ack'));
+});
+
+test('requested playback is observed through relinking and completed before queue failures or pause', async t => {
+  const { store } = await fixture(t);
+  await store.put('system', { id: 'spotify' });
+  await store.put('requests', request('one', 'queued', { queuedAt: new Date().toISOString() }));
+  let playback = { device: { id: 'device' }, item: { ...item, uri: 'spotify:track:2234567890123456789012', linked_from: { uri } }, is_playing: true };
+  const spotify = { async call(endpoint) {
+    if (endpoint === 'me/player') return playback;
+    throw new Error('queue unavailable');
+  } };
+  await assert.rejects(tick(store, spotify), /queue unavailable/);
+  const playing = await store.get('requests', 'one');
+  assert.equal(playing.status, 'playing'); assert.ok(playing.playedAt);
+  playback = null;
+  await tick(store, spotify);
+  assert.equal((await store.get('requests', 'one')).status, 'playing');
+  playback = { device: { id: 'device' }, item: { ...item, uri: 'spotify:track:3234567890123456789012' }, is_playing: false };
+  await tick(store, spotify);
+  assert.equal((await store.get('requests', 'one')).status, 'played');
+});
+
+test('relinked tracks still in the Spotify buffer are not marked skipped', async t => {
+  const { store } = await fixture(t);
+  await store.put('system', { id: 'spotify' });
+  await store.put('requests', request('one', 'submitting', { queuedAt: new Date(Date.now() - 240000).toISOString() }));
+  const spotify = { async call(endpoint) {
+    if (endpoint === 'me/player') return { device: { id: 'device' }, item: { ...item, uri: 'spotify:track:3234567890123456789012' }, is_playing: true };
+    return { queue: [{ ...item, uri: 'spotify:track:2234567890123456789012', linked_from: { uri } }] };
+  } };
+  await tick(store, spotify);
+  assert.equal((await store.get('requests', 'one')).status, 'queued');
 });
 test('archive saves completed tracks, keeps fairness history, and replay deduplicates', async t => {
   const { cfg, store } = await fixture(t);

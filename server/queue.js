@@ -7,18 +7,23 @@ export async function tick(store, spotify) {
   return withLease(store, 'queue', async () => {
     const playback = await spotify.call('me/player');
     await update(store, 'system', 'playback', () => ({ data: playback, checkedAt: Date.now() }));
+    const currentUris = new Set([playback?.item?.uri, playback?.item?.linked_from?.uri].filter(Boolean));
+    const requests = await store.list('requests');
+    for (const item of requests.filter(r => ['queued', 'submitting', 'playing'].includes(r.status))) {
+      if (currentUris.has(item.trackUri)) {
+        await update(store, 'requests', item.id, before => ({ ...before, status: 'playing', playedAt: before.playedAt || new Date().toISOString() }));
+      } else if (item.status === 'playing' && playback?.item) {
+        await update(store, 'requests', item.id, before => ({ ...before, status: 'played' }));
+      }
+    }
+    // A paused new track still confirms that the previously observed request
+    // finished. A missing device/204 does not prove a playback transition.
     if (!playback?.device || !playback.item || !playback.is_playing) return { idle: true };
     const live = await spotify.call('me/player/queue');
     if (!live || !Array.isArray(live.queue)) return { idle: true };
-    const currentUri = live.currently_playing?.uri || playback.item.uri;
-    const holding = new Set(live.queue.map(item => item.uri));
-    const requests = await store.list('requests');
-    for (const item of requests.filter(r => ['queued', 'submitting', 'playing'].includes(r.status))) {
-      if (item.trackUri === currentUri) {
-        await update(store, 'requests', item.id, before => ({ ...before, status: 'playing', playedAt: before.playedAt || new Date().toISOString() }));
-      } else if (item.status === 'playing') {
-        await update(store, 'requests', item.id, before => ({ ...before, status: 'played' }));
-      } else if (holding.has(item.trackUri) && item.status === 'submitting') {
+    const holding = new Set(live.queue.flatMap(item => [item.uri, item.linked_from?.uri]).filter(Boolean));
+    for (const item of (await store.list('requests')).filter(r => ['queued', 'submitting'].includes(r.status))) {
+      if (holding.has(item.trackUri) && item.status === 'submitting') {
         await update(store, 'requests', item.id, before => ({ ...before, status: 'queued' }));
       } else if (!holding.has(item.trackUri) && Date.now() - Date.parse(item.queuedAt) > 180000) {
         // Only witnessed playback enters archives; a dropped track becomes skipped.

@@ -5,13 +5,16 @@
 - Docker Desktop 4.93.0, engine/CLI 29.8.1 and Compose 5.5.1 verified; Linux amd64 engine responding.
 - Initial setup was blocked by old WSL and a missing kernel. After the user repaired WSL, version 3.0.1 with kernel 6.18.40.1-1 reports `docker-desktop` running under WSL 2.
 - Clean build passed using `docker build --pull --no-cache --platform linux/amd64 -t vibeq:local .`. A subsequent build with package version 1.0.1 also passed. Node 24.21.0 builds the frontend successfully inside Linux; the earlier Windows Vite stall did not recur there.
-- All 17 application tests passed under Linux Node 24, covering mocked Spotify/auth/search/playback, voting, FPQS, archives and add-ons. These also passed on Windows before its frontend build stalled.
+- All 20 application tests passed under Linux Node 24, covering mocked Spotify/auth/search/playback, voting, FPQS, archives and add-ons. The original 17 also passed on Windows before its frontend build stalled.
 - Container smoke tests passed on both builds: non-root UID 1000, clean initial data, artwork seed present, no development dependencies, homepage/player HTTP, host login, OAuth callback URL, voting, FPQS state, saved set, replacement persistence, restart, healthcheck and graceful shutdown with exit code 0.
 - Compose configuration and `git diff --check` passed. The local Compose service reports healthy and publishes only `127.0.0.1:3001`.
 - Browser inspection confirmed that the player renders and uses the local API.
 - Separate live provider tests passed using disposable containers/sample song metadata: artwork generated, stored and retrieved a valid 763,356-byte PNG; trivia returned six sourced items cached in SQLite. These used `/tmp` storage, not the room's persistent data.
 - A scan of 107 runtime files found no configured secret values and no Azure Function API URL in built JavaScript. `.env.docker` is ignored by Git and excluded from the image.
-- Real Spotify authorization/search/playback verification remains pending user interaction. The requested Docker release tag is `v1.0.1`; GHCR publication remains pending.
+- Live Spotify authorization and search passed. Observed a requested song transition from playing to completed history and the next request start playing. A named validation set was saved from real completed history. Device listing and a volume command preserving the current volume passed; Spotify rejected a resume command while already playing.
+- Live testing exposed successful command responses containing opaque non-JSON acknowledgements. Fixed playback commands to accept successful 2xx responses without JSON parsing. Playback observation now precedes queue reads, records transitions even when the new track is paused, preserves history across queue-read failures, and matches Spotify's relinked track URI. Regression tests cover these cases; the rebuilt image and container smoke tests passed.
+- Songs played or skipped entirely between worker polls cannot be reconstructed from current playback. Previously unobserved requests marked skipped have not been fabricated into completed history.
+- Initial GitHub application and Docker workflows passed for commit `35da2b6`. The queue fix will be validated again before the requested `v1.0.1` GHCR publication.
 
 ## Automated validation
 

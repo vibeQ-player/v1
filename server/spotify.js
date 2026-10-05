@@ -45,6 +45,13 @@ export class Spotify {
       const messages = { 401: 'Spotify connection expired. Reconnect your account.', 403: 'Spotify denied this action. Check Premium, app access, and granted scopes.', 404: 'No active Spotify device. Open Spotify and start playback first.' };
       throw new HttpError(response.status === 404 ? 409 : 502, messages[response.status] || 'Spotify request failed.');
     }
-    return response.status === 204 ? null : response.json();
+    // Playback commands acknowledge success without a JSON resource. Some
+    // devices return 200/202 with an opaque body instead of an empty 204.
+    if (response.status === 204 || method !== 'GET') {
+      await response.body?.cancel().catch(() => {});
+      return null;
+    }
+    try { return await response.json(); }
+    catch { throw new HttpError(502, 'Spotify returned an invalid response. Try again shortly.'); }
   }
 }

@@ -176,3 +176,21 @@ test('artwork is cached locally and daily limits bound new AI calls', async t =>
   assert.deepEqual(await addons.generate(request('two', 'pending', { trackUri: 'spotify:track:2234567890123456789012' })), { limit: true });
   assert.equal(calls, 1);
 });
+
+test('add-on worker reserves generation for the playing song and state explains limits', async t => {
+  const { cfg, store } = await fixture(t, { ENABLE_ARTWORK: 'true', ENABLE_TRIVIA: 'true', ADDON_DAILY_LIMIT: '2' });
+  const generated = [];
+  const app = createApp(cfg, store, { addons: { configured: () => true, async generate(song) { generated.push(song.trackUri); return { processed: song.trackUri }; } } });
+  await store.put('requests', request('pending'));
+  assert.deepEqual(await app.generateAddons(), { idle: true });
+  assert.equal(generated.length, 0);
+  assert.equal((await (await app.handle(req('/state'))).json()).addonStatus.artwork, 'waiting-playback');
+  await store.put('system', { id: 'playback', data: { item, is_playing: false } });
+  assert.deepEqual(await app.generateAddons(), { idle: true });
+  await update(store, 'system', 'playback', old => ({ ...old, data: { item, is_playing: true } }));
+  await app.generateAddons();
+  assert.deepEqual(generated, [uri]);
+  await store.put('system', { id: `addon-budget-${new Date().toISOString().slice(0, 10)}`, count: 2 });
+  const state = await (await app.handle(req('/state'))).json();
+  assert.deepEqual(state.addonStatus, { artwork: 'daily-limit', trivia: 'daily-limit' });
+});

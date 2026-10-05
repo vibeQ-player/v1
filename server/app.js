@@ -100,7 +100,13 @@ export function createApp(cfg, store, options = {}) {
       const playback = await store.get('system', 'playback');
       const nowPlaying = track(playback?.data?.item);
       const nowAddon = nowPlaying ? cached.find(a => a.id === addonKey(nowPlaying.trackUri)) : null;
-      return json({ connected: Boolean(await store.get('system', 'spotify')), playback: { track: nowPlaying, isPlaying: playback?.data?.is_playing || false, deviceName: playback?.data?.device?.name || null, checkedAt: playback?.checkedAt || null }, pending: sorted.map(r => ({ ...enrich(r), fairScore: scoreOf[r.id] })), queued: items.filter(r => ['queued', 'submitting'].includes(r.status)).sort((a,b) => Date.parse(a.queuedAt) - Date.parse(b.queuedAt)).map(enrich), played: items.filter(r => ['played', 'playing'].includes(r.status) && !r.archivedAt).sort((a,b) => Date.parse(b.playedAt) - Date.parse(a.playedAt)).slice(0, 50).map(enrich), trivia: cfg.features.trivia ? nowAddon?.trivia || [] : [], customArt: cfg.features.artwork ? nowAddon?.artwork || null : null });
+      const budget = await store.get('system', `addon-budget-${new Date().toISOString().slice(0, 10)}`);
+      const addonStatus = Object.fromEntries(['artwork', 'trivia'].map(kind => [kind,
+        !cfg.features[kind] ? 'disabled' : !addons.configured(kind) ? 'unconfigured' : !nowPlaying ? 'waiting-playback' :
+        nowAddon?.[kind] ? 'ready' : nowAddon?.failedAt?.[kind] && Date.now() - nowAddon.failedAt[kind] < 3600000 ? 'unavailable' :
+        (budget?.count || 0) >= cfg.addonLimit ? 'daily-limit' : 'generating'
+      ]));
+      return json({ connected: Boolean(await store.get('system', 'spotify')), playback: { track: nowPlaying, isPlaying: playback?.data?.is_playing || false, deviceName: playback?.data?.device?.name || null, checkedAt: playback?.checkedAt || null }, pending: sorted.map(r => ({ ...enrich(r), fairScore: scoreOf[r.id] })), queued: items.filter(r => ['queued', 'submitting'].includes(r.status)).sort((a,b) => Date.parse(a.queuedAt) - Date.parse(b.queuedAt)).map(enrich), played: items.filter(r => ['played', 'playing'].includes(r.status) && !r.archivedAt).sort((a,b) => Date.parse(b.playedAt) - Date.parse(a.playedAt)).slice(0, 50).map(enrich), addonStatus, trivia: cfg.features.trivia ? nowAddon?.trivia || [] : [], customArt: cfg.features.artwork ? nowAddon?.artwork || null : null });
     }
     if (path === '/api/requests' && method === 'POST') {
       const data = await body(request), guestId = guest(data.guestId);
@@ -211,12 +217,9 @@ export function createApp(cfg, store, options = {}) {
       if (!cfg.features.artwork && !cfg.features.trivia) return { idle: true };
       const playback = await store.get('system', 'playback');
       const current = track(playback?.data?.item);
-      const requests = (await store.list('requests')).filter(r => ['pending', 'queued', 'playing'].includes(r.status)).slice(0, 20);
-      for (const item of [...(current ? [current] : []), ...requests]) {
-        const result = await addons.generate(item);
-        if (result.processed || result.busy || result.limit) return result;
-      }
-      return { idle: true };
+      // Reserve the allowance for songs listeners actually hear.
+      if (!current || !playback?.data?.is_playing) return { idle: true };
+      return addons.generate(current);
     },
   };
 }

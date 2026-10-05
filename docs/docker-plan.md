@@ -43,7 +43,7 @@ Use an image tag matching the release that actually introduces Docker support. D
 
 ## Repository naming
 
-`v1` is valid, but `vibeq` describes the project more clearly and remains suitable for later versions. Keep version numbers in release tags. A rename requires updating the Git remote, README links and website repository links; it does not require changing the website domain or Azure resource names. Rename only after the owner chooses the new name.
+The repository is now [vibeQ-player/vibeq](https://github.com/vibeQ-player/vibeq). Version numbers belong in release tags, starting with `v1.0.0`. The Git remote, README, website links and release notes have been updated following the rename from `v1`; the website domain and Azure resource names are unchanged.
 
 ## Reference documentation
 

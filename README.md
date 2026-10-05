@@ -4,7 +4,7 @@ Search Spotify, request songs, vote for favourites, and let a fair queue give ev
 
 **Run locally with Node.js and SQLite: no Azure account, Azure Functions, Docker, or AI credentials required.** The shared Node.js application can be adapted for AWS, Google Cloud, Azure, or another host with persistent storage and background workers. This repository includes an Azure deployment path for the hosted demo; other providers require their own deployment configuration. YouTube, bookings, and multiple Spotify account slots are outside this project’s scope.
 
-**[Project website](https://vibeq.groovepop.ca/)** · **[Live demo](https://vibeq.groovepop.ca/player/)** · [Public repository](https://github.com/vibeQ-player/v1). The demo uses the host’s Spotify connection; playback requires an active Spotify device. Archives, AI artwork, and sourced trivia are enabled, with no daily generation allowance. Cached content is reused and remains available when Spotify is idle.
+**[Project website](https://vibeq.groovepop.ca/)** · **[Live demo](https://vibeq.groovepop.ca/player/)** · [Public repository](https://github.com/vibeQ-player/vibeq). The demo uses the host’s Spotify connection; playback requires an active Spotify device. Archives, AI artwork, and sourced trivia are enabled, with no daily generation allowance. Cached content is reused and remains available when Spotify is idle.
 
 ## Features
 
@@ -32,8 +32,8 @@ Review [Spotify’s current quota-mode requirements](https://developer.spotify.c
 ## Run locally
 
 ```powershell
-git clone https://github.com/vibeQ-player/v1.git
-cd v1
+git clone https://github.com/vibeQ-player/vibeq.git
+cd vibeq
 npm ci
 Copy-Item .env.example .env
 ```

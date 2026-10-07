@@ -1,4 +1,4 @@
-# vibeQ — a Spotify jukebox for everyone in the room
+# vibeQ by Groovepop — an open-source Spotify jukebox
 
 Search Spotify, request songs, vote for favourites, and let a fair queue give everyone a turn. Hosts connect one Spotify account and manage playback. Optional session archives, original AI artwork, and sourced trivia enhance the experience.
 
